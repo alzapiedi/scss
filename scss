@@ -1,0 +1,66 @@
+#! /usr/bin/env node
+const fs = require('fs');
+const _path = require('path');
+
+const dir = _path.resolve('.');
+const files = fs.readdirSync(dir);
+
+const BLACKLIST = ['MembersList', 'ZiggeoVideoRecorder'];
+
+let fileCount = 0;
+let unusedStyleCount = 0;
+
+function path(fileName) {
+  return _path.resolve(dir, fileName);
+}
+
+function diff({ fileName, scssClassNames, jsClassNames }) {
+  const unusedClassNames = Array.from(scssClassNames).filter(className => !jsClassNames.has(className));
+  const l = unusedClassNames.length;
+
+  if (l === 0) return;
+
+  fileCount++;
+  unusedStyleCount += l;
+  console.log(`\x1b[1m${fileName}\x1b[0m: ${l} unused style${l > 1 ? 's' : ''}\n\t- ${unusedClassNames.join('\n\t- ')}`);
+}
+
+function isScss(fileName) {
+  return !!fileName.match(/\.scss$/);
+}
+
+function removeFileExtension(fileName) {
+  return fileName.split('.')[0];
+}
+
+function notBlacklisted(file) {
+  return !BLACKLIST.includes(file);
+}
+
+function processFile(fileName) {
+  try {
+    const js = fs.readFileSync(path(`${fileName}.js`)).toString();
+    const scss = fs.readFileSync(path(`${fileName}.scss`)).toString();
+    const scssRegex = new RegExp(`\\.${fileName}-\\w+|${fileName}`, 'g');
+    const jsRegex = new RegExp(`${fileName}-\\w+|className.*(\"|\').*${fileName}(\"|\'|\s)`, 'g');
+
+    const scssClassNames = new Set(scss.match(scssRegex).map(className => className.replace('.', '')));
+    const jsClassNames = new Set(js.match(jsRegex).map(className => className.indexOf('className') > -1 ? fileName : className));
+    diff({ fileName, scssClassNames, jsClassNames });
+  } catch (err) {
+    if (err instanceof TypeError) return;
+    console.log(`\x1b[41mError - ${fileName}: ${typeof err} - ${err.message}\x1b[0m`);
+  }
+}
+
+const args = process.argv.slice(2);
+
+if (args[0]) {
+  processFile(args[0]);
+} else {
+  const fileNames = files.filter(isScss).map(removeFileExtension).filter(notBlacklisted);
+  fileNames.forEach(processFile);
+  if (unusedStyleCount === 0) process.exit(0);
+  console.log('--------------------------------------------');
+  console.log(`\x1b[1mTotal of \x1b[41m${unusedStyleCount} unused styles\x1b[40m found in ${fileCount} files\x1b[0m`);
+}
